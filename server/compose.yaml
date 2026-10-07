@@ -1,0 +1,36 @@
+# Runs on the server host. This setup's host runs Unraid: the repo is cloned at
+# /mnt/user/workspace/piwii, and Unraid's Compose Manager includes this file
+# from another compose project.
+services:
+  piwii:
+    build: .
+    container_name: piwii
+    restart: unless-stopped
+    init: true
+    ports:
+      - "8790:8790"
+    labels:
+      autoheal: "true"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8790/healthz', timeout=8)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PIWII_STAGING_DIR: /mnt/piwii/staging
+      PIWII_WORK_DIR: /work
+    volumes:
+      # The Pi's staging share, kept mounted by the server host itself (on
+      # Unraid, by server/host/piwii-staging-mount.sh), not by Docker, so piwii starts
+      # even when the Pi is down. Bind the parent folder with rslave so the
+      # script's remounts of /mnt/addons/piwii/staging reach the running
+      # container; binding the share itself would pin the mount piwii started
+      # with. While the share is down, staging/ is empty (no .piwii-staging).
+      # /mnt/addons/piwii is this setup's (Unraid) path; on another host, use
+      # the parent of wherever you mount the share (see the README).
+      - /mnt/addons/piwii:/mnt/piwii:rslave
+      - ./work:/work

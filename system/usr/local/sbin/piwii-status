@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# piwii-status: every $INTERVAL seconds, write a snapshot of the Pi's state to
+# staging/status/pi-status.json for the piwii web page. status/ is a RAM-only
+# tmpfs, so this never writes to the SD card. Runs as piwii-status.service.
+# Read-only otherwise: it only looks at sysfs and systemd, never the game drive itself.
+set -euo pipefail
+
+STAGING=/srv/piwii/staging
+# The game drive comes from /etc/default/piwii (see piwii.example in the repo).
+CONF=${PIWII_CONF:-/etc/default/piwii}
+if [ -r "$CONF" ]; then . "$CONF"; fi
+[ -n "${PIWII_DISK:-}" ] || { echo "piwii-status: set PIWII_DISK in $CONF" >&2; exit 1; }
+DISK=$PIWII_DISK
+G=/sys/kernel/config/usb_gadget/piwii
+STATUS_DIR=$STAGING/status
+INTERVAL=${PIWII_STATUS_INTERVAL:-5}
+
+# Only write into the tmpfs; if it isn't mounted, the files would land on the SD card.
+mountpoint -q "$STATUS_DIR" || { echo "piwii-status: $STATUS_DIR is not mounted" >&2; exit 1; }
+
+# Hardware names for the web page's storage cards, from the config (optional).
+json_str() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; printf '"%s"' "$s"; }
+drive_label=$(json_str "${PIWII_DRIVE_LABEL:-}")
+sd_label=$(json_str "${PIWII_SD_LABEL:-}")
+
+last_t=""; last_s=""   # previous sample, for the Wii's throughput
+while :; do
+    now=$(date +%s)
+    udc=$(ls /sys/class/udc 2>/dev/null | head -n1 || true)
+    link=$(cat "/sys/class/udc/$udc/state" 2>/dev/null || echo unknown)
+    gadget=detached
+    if [ -e "$G/UDC" ] && [ -n "$(cat "$G/UDC")" ]; then gadget=attached; fi
+    t7=missing
+    kibps=null
+    t7_part_bytes=null
+    if [ -b "$DISK" ]; then
+        t7=present
+        # Partition size from the kernel (no mount needed); close to the FAT32 total.
+        t7_part_bytes=$(( $(cat "/sys/class/block/$(basename "$(readlink -f "$DISK-part1")")/size") * 512 ))
+        sectors=$(awk '{print $3 + $7}' "/sys/block/$(basename "$(readlink -f "$DISK")")/stat")
+        if [ -n "$last_t" ] && [ "$now" -gt "$last_t" ] && [ "$sectors" -ge "$last_s" ]; then
+            kibps=$(( (sectors - last_s) / 2 / (now - last_t) ))
+        fi
+        last_t=$now; last_s=$sectors
+    fi
+    sync_state=$(systemctl is-active piwii-sync.service || true)
+    uptime_s=$(cut -d. -f1 /proc/uptime)
+    read -r staging_total staging_free < <(df -Pk "$STAGING" | awk 'NR==2 {print $2 * 1024, $4 * 1024}')
+
+    tmp=$STATUS_DIR/pi-status.json.tmp
+    printf '{"updated": %s, "uptime_s": %s, "gadget": "%s", "wii_link": "%s", "wii_kib_per_s": %s, "t7": "%s", "sync_service": "%s", "staging_free_bytes": %s, "staging_total_bytes": %s, "t7_part_bytes": %s, "drive_label": %s, "sd_label": %s}\n' \
+        "$now" "$uptime_s" "$gadget" "$link" "$kibps" "$t7" "$sync_state" "$staging_free" "$staging_total" "$t7_part_bytes" "$drive_label" "$sd_label" > "$tmp"
+    chown 1000:1000 "$tmp"
+    mv "$tmp" "$STATUS_DIR/pi-status.json"
+    sleep "$INTERVAL"
+done

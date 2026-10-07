@@ -1,0 +1,7 @@
+[Unit]
+Description=piwii: copy staged games onto the game drive
+After=piwii-gadget.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/piwii-sync

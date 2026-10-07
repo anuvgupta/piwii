@@ -1,0 +1,9 @@
+[Unit]
+Description=piwii: sync when a game lands in staging/ready
+
+[Path]
+DirectoryNotEmpty=/srv/piwii/staging/ready
+MakeDirectory=yes
+
+[Install]
+WantedBy=multi-user.target

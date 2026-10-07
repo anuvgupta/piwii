@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# piwii-sync: move finished games from the NFS staging area onto the game drive.
+#
+#   piwii-sync          copy everything in staging/ready/ onto the game drive
+#   piwii-sync library  only refresh staging/library.json (used at boot)
+#
+# Games arrive already converted (split WBFS in "Title [ID6]" folders), so the
+# Wii only loses its drive for the copy itself. The gadget is always
+# reattached on exit, even if something fails.
+set -euo pipefail
+
+STAGING=/srv/piwii/staging
+READY=$STAGING/ready
+# The game drive comes from /etc/default/piwii (see piwii.example in the repo).
+CONF=${PIWII_CONF:-/etc/default/piwii}
+if [ -r "$CONF" ]; then . "$CONF"; fi
+[ -n "${PIWII_DISK:-}" ] || { echo "piwii-sync: set PIWII_DISK in $CONF" >&2; exit 1; }
+DISK=$PIWII_DISK
+PART=$DISK-part1
+MNT=/mnt/piwii-drive
+SETTLE=${PIWII_SYNC_SETTLE:-5}   # seconds to wait so back-to-back games share one detach
+IDLE=${PIWII_SYNC_IDLE:-45}    # Wii must be quiet on the game drive for this long before a sync detaches it
+GUARD=${PIWII_SYNC_GUARD:-throughput}  # throughput: busy above BUSY_KIB per check; any: busy on any I/O
+BUSY_KIB=${PIWII_SYNC_BUSY_KIB:-128}  # throughput mode: more than this read+written in one 5 s check counts as busy
+DUP_DAYS=${PIWII_SYNC_DUP_DAYS:-7}   # duplicates/ entries older than this many days are deleted
+
+log() { echo "piwii-sync: $*"; }
+
+# Publish what sync is doing to staging/status/sync-status.json (RAM-only
+# tmpfs), which the piwii web page shows. Skipped if the tmpfs isn't
+# mounted, so it never lands on the SD card. Never fails the sync.
+status() {
+    mountpoint -q "$STAGING/status" || return 0
+    python3 - "$STAGING/status/sync-status.json" "$@" <<'PY' || true
+import json, os, sys, time
+out, phase, detail, game = (sys.argv[1:] + ["", "", ""])[:4]
+tmp = out + ".tmp"
+with open(tmp, "w") as f:
+    json.dump({"phase": phase, "detail": detail, "game": game, "updated": int(time.time())}, f)
+os.chown(tmp, 1000, 1000)
+os.replace(tmp, out)
+PY
+}
+
+# Hold the sync while the Wii is using the drive. The gadget's reads and
+# writes go through the game drive's block device, so its sector counters show how
+# much the Wii moves. Wait until it's been quiet for $IDLE seconds, where
+# "quiet" depends on $GUARD:
+#   throughput (default)  a 5 s check is busy only when more than $BUSY_KIB
+#                         moved. USB Loader GX polls the drive even idle in
+#                         its menu (about 4 KiB every 10 s); this ignores that.
+#   any                   any I/O at all is busy. Stricter, but never goes
+#                         quiet while the loader's menu is open.
+# If the Wii isn't connected (link not "configured", e.g. it's off), go
+# immediately. A game that has everything in RAM can sit idle for minutes,
+# so this lowers the risk of yanking the drive mid-game but can't rule it out.
+wait_for_wii_idle() {
+    [ "$IDLE" -gt 0 ] || return 0
+    local stat quiet=0 last="" cur moved limit waited=0
+    case "$GUARD" in
+        throughput) limit=$((BUSY_KIB * 2)) ;;   # in 512-byte sectors
+        any)        limit=0 ;;
+        *) log "unknown PIWII_SYNC_GUARD=$GUARD (want throughput or any)"; exit 1 ;;
+    esac
+    stat=/sys/block/$(basename "$(readlink -f "$DISK")")/stat
+    while :; do
+        if [ "$(cat /sys/class/udc/*/state 2>/dev/null)" != configured ]; then return 0; fi
+        cur=$(awk '{print $3 + $7}' "$stat")   # sectors read + written
+        moved=0
+        if [ -n "$last" ]; then moved=$((cur - last)); fi
+        if [ "$moved" -gt "$limit" ]; then quiet=0; else quiet=$((quiet + 5)); fi
+        last=$cur
+        if [ "$quiet" -ge "$IDLE" ]; then return 0; fi
+        status waiting-idle "waiting for the Wii to go idle: ${quiet}s of ${IDLE}s quiet (${GUARD} guard)"
+        if [ $((waited % 60)) -eq 0 ]; then log "Wii is using the drive ($GUARD guard); waiting for ${IDLE}s of quiet"; fi
+        sleep 5; waited=$((waited + 5))
+    done
+}
+
+[ "$(id -u)" -eq 0 ] || { log "must run as root"; exit 1; }
+exec 9>/run/piwii-sync.lock
+flock 9
+
+mode=${1:-sync}
+mkdir -p "$READY" "$STAGING/failed" "$STAGING/duplicates" "$MNT"
+chown 1000:1000 "$READY" "$STAGING/failed" "$STAGING/duplicates"
+
+# Uploads of games already on the game drive are set aside in duplicates/ for a look,
+# then deleted after $DUP_DAYS days (aged from when they were set aside). Runs
+# at boot and on every sync. failed/ is never cleaned: those need a human.
+find "$STAGING/duplicates" -mindepth 1 -maxdepth 1 -mtime +"$DUP_DAYS" -print -exec rm -rf {} + |
+    while read -r old; do log "$(basename "$old"): in duplicates/ over $DUP_DAYS days, deleted"; done
+
+was_attached=0
+if [ "$mode" = sync ]; then
+    [ -n "$(ls -A "$READY")" ] || { log "nothing in ready/"; exit 0; }
+    status settling "batching arrivals for ${SETTLE}s"
+    sleep "$SETTLE"
+    wait_for_wii_idle
+fi
+# Capture first: piping straight into `grep -q` lets grep exit early, status
+# then dies of SIGPIPE, and pipefail makes the test read "not attached", so
+# the gadget never got reattached.
+gadget_status=$(/usr/local/sbin/piwii-gadget status)
+if grep -q '^gadget: attached' <<<"$gadget_status"; then was_attached=1; fi
+
+synced=0; skipped=0; failed=0
+cleanup() {
+    local rc=$?
+    sync
+    if mountpoint -q "$MNT"; then umount "$MNT"; fi
+    if [ "$was_attached" = 1 ]; then status reattaching "plugging the drive back into the Wii"; /usr/local/sbin/piwii-gadget attach; fi
+    if [ "$rc" -ne 0 ]; then
+        status idle "last sync hit an error (exit $rc); see journalctl -u piwii-sync"
+    elif [ "$mode" = sync ]; then
+        status idle "last sync: $synced copied, $skipped duplicate, $failed failed"
+    else
+        status idle "library refreshed"
+    fi
+}
+trap cleanup EXIT
+
+status detaching "unplugging the drive from the Wii"
+/usr/local/sbin/piwii-gadget detach
+mount -t vfat -o rw,noatime,utf8 "$PART" "$MNT"
+mkdir -p "$MNT/wbfs"
+
+if [ "$mode" = sync ]; then
+    for src in "$READY"/*/; do
+        src=${src%/}
+        name=$(basename "$src")
+        id=$(sed -n 's/.*\[\([A-Z0-9]\{6\}\)\]$/\1/p' <<<"$name")
+        if [ -z "$id" ]; then
+            log "$name: no [ID6] in folder name, moving to failed/"
+            mv "$src" "$STAGING/failed/"; failed=$((failed + 1)); continue
+        fi
+        if compgen -G "$MNT/wbfs/*\[$id\]" >/dev/null || compgen -G "$MNT/wbfs/*\[$id\].wbfs" >/dev/null; then
+            log "$name: $id already on the game drive, moving to duplicates/"
+            rm -rf "$STAGING/duplicates/$name"; mv "$src" "$STAGING/duplicates/"; touch "$STAGING/duplicates/$name"; skipped=$((skipped + 1)); continue
+        fi
+        need=$(du -sk "$src" | cut -f1)
+        free=$(df -Pk "$MNT" | awk 'NR==2 {print $4}')
+        if [ "$need" -ge "$free" ]; then
+            log "$name: needs ${need}K, only ${free}K free, moving to failed/"
+            mv "$src" "$STAGING/failed/"; failed=$((failed + 1)); continue
+        fi
+        log "$name: copying $((need / 1024)) MiB"
+        status copying "copying $((need / 1024)) MiB onto the game drive" "$name"
+        tmp="$MNT/wbfs/.partial-$id"
+        rm -rf "$tmp"
+        if cp -r "$src" "$tmp" && mv "$tmp" "$MNT/wbfs/$name"; then
+            rm -rf "$src"
+            synced=$((synced + 1))
+            log "$name: done"
+        else
+            rm -rf "$tmp"
+            log "$name: copy failed, moving to failed/"
+            mv "$src" "$STAGING/failed/"
+            failed=$((failed + 1))
+        fi
+    done
+fi
+
+# macOS metadata confuses USB Loader GX (._ files look like games).
+find "$MNT" \( -name '._*' -o -name '.DS_Store' -o -name '.Spotlight-V100' -o -name '.fseventsd' -o -name '.Trashes' \) -prune -exec rm -rf {} +
+
+status library "updating the game list"
+python3 - "$MNT/wbfs" "$STAGING/library.json" <<'PY'
+import json, os, re, sys, time
+wbfs, out = sys.argv[1], sys.argv[2]
+games = []
+for name in sorted(os.listdir(wbfs)):
+    path = os.path.join(wbfs, name)
+    m = re.search(r"\[([A-Z0-9]{6})\]$", name)
+    if os.path.isdir(path) and m:
+        size = sum(os.path.getsize(os.path.join(path, f)) for f in os.listdir(path))
+        # "added": the folder's timestamp, set when sync/import created it on the game drive.
+        games.append({"folder": name, "id": m.group(1), "bytes": size, "added": int(os.path.getmtime(path))})
+    elif name.lower().endswith(".wbfs"):  # older flat layout: "Title [ID6].wbfs"
+        m = re.search(r"\[([A-Z0-9]{6})\]\.wbfs$", name, re.I)
+        games.append({"folder": name, "id": m.group(1) if m else name[:6], "bytes": os.path.getsize(path), "added": int(os.path.getmtime(path))})
+st = os.statvfs(wbfs)
+data = {"updated": int(time.time()), "free_bytes": st.f_bavail * st.f_frsize, "total_bytes": st.f_blocks * st.f_frsize, "games": games}
+tmp = out + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=1)
+os.chown(tmp, 1000, 1000)
+os.replace(tmp, out)
+print(f"piwii-sync: library has {len(games)} games")
+PY

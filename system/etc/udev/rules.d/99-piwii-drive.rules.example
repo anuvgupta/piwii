@@ -1,0 +1,13 @@
+# Template for /etc/udev/rules.d/99-piwii-drive.rules on the Pi
+# (99-piwii-drive.rules next to this file is the live one for this setup).
+# Replace <drive-serial> with your game drive's serial, from:
+#   udevadm info --query=property --name=/dev/sdX | grep ID_SERIAL_SHORT
+# then run: sudo udevadm control --reload && sudo udevadm trigger
+# udev only reads files ending in .rules, so this template does nothing here.
+#
+# piwii: the Wii owns the game drive (passed through as a USB gadget drive),
+# so the Pi's desktop must never mount it on its own. UDISKS_IGNORE hides the
+# disk and its partition from udisks (no file-manager icon); UDISKS_AUTO=0 also
+# turns off automount in case a desktop component ignores the hide hint.
+# Matched by serial number so a different USB disk still behaves normally.
+SUBSYSTEM=="block", ENV{ID_SERIAL_SHORT}=="<drive-serial>", ENV{UDISKS_IGNORE}="1", ENV{UDISKS_AUTO}="0"

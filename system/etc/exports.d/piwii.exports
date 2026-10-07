@@ -1,0 +1,14 @@
+# This setup's live file. 192.168.4.32 is the LAN address of the server host
+# that runs piwii's web server, reserved in the router. For another setup,
+# start from piwii.exports.example instead.
+#
+# piwii: staging area where finished games land before the Pi syncs them onto
+# the game drive. Only the server host (192.168.4.32) may mount it. People add games
+# through the piwii web server, never by mounting this directly.
+# all_squash maps the client to admin (1000) so files stay owned by admin.
+# crossmnt lets the server host see the status/ tmpfs mounted inside staging.
+/srv/piwii/staging 192.168.4.32(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,crossmnt)
+# status/ is a RAM-only tmpfs (see srv-piwii-staging-status.mount). tmpfs has
+# no stable filesystem ID, so it needs an explicit fsid. Read-only: the
+# web server only reads status.
+/srv/piwii/staging/status 192.168.4.32(ro,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,fsid=7701)

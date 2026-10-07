@@ -1,0 +1,25 @@
+# Template for /etc/default/piwii on the Pi (piwii next to this file is the
+# live one for this setup). Copy it there as root and fill in your drive.
+# Read by piwii-gadget, piwii-sync and piwii-status.
+
+# The game drive, by its stable name under /dev/disk/by-id (the whole disk,
+# not a -partN entry). List candidates with: ls -l /dev/disk/by-id/
+PIWII_DISK=/dev/disk/by-id/usb-<vendor>_<model>_<serial>-0:0
+
+# Serial number the Wii sees for the passed-through drive. Optional (default
+# "piwii").
+#PIWII_GADGET_SERIAL=piwii
+
+# Names shown on the web page's storage cards ("Drive • …", "Pi • …").
+# Optional: without them the cards just say "Drive" and "Pi SD card".
+# piwii-status publishes them; restart it after changing them.
+#PIWII_DRIVE_LABEL="Samsung T7 SSD"
+#PIWII_SD_LABEL="SanDisk 64 GB microSD"
+
+# Optional tuning (defaults shown), also read from this file:
+#PIWII_STATUS_INTERVAL=5     # piwii-status: seconds between status snapshots
+#PIWII_SYNC_SETTLE=5         # piwii-sync: wait this long so back-to-back games share one detach
+#PIWII_SYNC_IDLE=45          # piwii-sync: the Wii must be quiet on the drive this long before a sync
+#PIWII_SYNC_GUARD=throughput # piwii-sync: "throughput" (ignore idle polling) or "any" (any I/O is busy)
+#PIWII_SYNC_BUSY_KIB=128     # piwii-sync, throughput guard: more than this per 5 s check is busy
+#PIWII_SYNC_DUP_DAYS=7       # piwii-sync: delete duplicates/ entries older than this many days

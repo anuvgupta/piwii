@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>piwii</title>
+<link rel="icon" href="/favicon-32.png?v=4" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/favicon.png?v=4">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eceef1; --stripe: #e4e7eb; --panel: #ffffff; --ink: #3c4148; --muted: #8a9099;
+    --line: #cdd2d9; --wii: #34bfea; --wii-deep: #0f9fd0; --good: #3fb56b; --bad: #e0565b; --warn: #f0a42b;
+    --tile-shadow: 0 2px 0 #c3c8cf, 0 6px 14px rgba(40, 50, 70, .10);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg) repeating-linear-gradient(0deg, var(--stripe) 0 2px, transparent 2px 6px);
+    color: var(--ink); font: 600 15px/1.4 Nunito, system-ui, sans-serif; min-height: 100vh;
+    padding-bottom: 120px;
+  }
+  button { font: inherit; cursor: pointer; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 18px 16px 0; }
+
+  /* top bar */
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .brand { font-weight: 800; font-size: 26px; letter-spacing: .5px; color: #9aa1aa; }
+  .brand b { color: var(--wii); }
+  .spacer { flex: 1; }
+  .search { flex: 0 1 260px; min-width: 0; padding: 9px 14px; border-radius: 999px; border: 2px solid var(--line); background: #fff; color: var(--ink); font: inherit; }
+  .seg { display: inline-flex; background: #fff; border: 2px solid var(--line); border-radius: 999px; padding: 3px; }
+  .seg button { border: 0; background: transparent; color: var(--muted); padding: 6px 14px; border-radius: 999px; font-weight: 800; }
+  .seg button.on { background: var(--wii); color: #fff; }
+  .add-btn { border: 0; border-radius: 999px; padding: 10px 20px; font-weight: 800; color: #fff; font-size: 16px;
+    background: linear-gradient(#4fd0f5, var(--wii-deep)); box-shadow: 0 3px 0 #0b7fa8, 0 6px 14px rgba(15, 159, 208, .35); }
+  .add-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #0b7fa8; }
+
+  /* status */
+  .status { margin-top: 16px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .status .wide { grid-column: span 2; }
+  @media (max-width: 760px) { .status { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .card { background: var(--panel); border: 2px solid var(--line); border-radius: 16px; padding: 10px 14px; box-shadow: var(--tile-shadow); min-width: 0; }
+  .card .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  .card .v { font-weight: 800; margin-top: 2px; overflow-wrap: anywhere; }
+  .card .s { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .pi-card { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--muted); flex: none; box-shadow: inset 0 -2px 0 rgba(0,0,0,.15); }
+  .dot.on { background: var(--good); } .dot.off { background: var(--bad); } .dot.busy { background: var(--wii); animation: pulse 1.2s infinite; }
+  .dot.warn { background: var(--warn); } .dot.idle { background: #c3c8cf; }
+  @keyframes pulse { 50% { opacity: .4; } }
+  .khead { display: flex; justify-content: space-between; gap: 10px; }
+  .khead .max { color: var(--ink); font-weight: 800; text-transform: none; letter-spacing: 0; }
+  .bar { position: relative; height: 24px; border-radius: 999px; background: #e3e6ea; margin: 8px 0 2px; overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,.08); font-size: 12px; font-weight: 800; line-height: 24px; white-space: nowrap; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: linear-gradient(90deg, #6fd8f7, var(--wii-deep)); }
+  .bar i.hi { background: linear-gradient(90deg, #f6c35f, var(--warn)); }
+  .bar .used, .bar .free { position: absolute; top: 0; padding: 0 10px; }
+  .bar .used { color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.2); }
+  .bar .used.out { color: var(--ink); text-shadow: none; }
+  .bar .free { right: 0; color: var(--muted); }
+
+  /* activity banner: only shown while something is in flight */
+  .banner { margin-top: 12px; background: #f3fbfe; border: 2px solid var(--wii); border-radius: 16px; padding: 8px 14px; box-shadow: var(--tile-shadow); }
+  .banner ul { list-style: none; margin: 0; padding: 0; }
+  .banner li { padding: 5px 0; border-top: 1px solid #d6eef7; overflow-wrap: anywhere; }
+  .banner li:first-child { border-top: 0; }
+  .banner .d { color: var(--muted); font-size: 13px; }
+
+  /* channel grid */
+  .stage { position: relative; margin-top: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); gap: 16px; }
+  /* The blurred cover is the tile's own background (a blurred canvas render of the cover: see tileTint),
+     because an element's background always follows its own rounded corners. A CSS-blurred child layer needs the
+     tile to clip it, and Safari doesn't while the tile is scaled on hover (square corners showed). Nothing in the
+     tile reaches its edges unrounded, so no clipping is needed. */
+  .tile { position: relative; aspect-ratio: 16 / 10; border-radius: 18px; border: 3px solid #d3d8de;
+    background: #fafbfc center / cover no-repeat; box-shadow: var(--tile-shadow); overflow: hidden; padding: 0; transition: transform .12s, border-color .12s, box-shadow .12s; }
+  .tile.empty { background: linear-gradient(#f4f5f7, #e9ecef); cursor: default; }
+  .tile:not(.empty):hover, .tile:not(.empty):focus-visible { transform: scale(1.04); border-color: var(--wii); outline: none;
+    box-shadow: 0 0 0 4px rgba(52, 191, 234, .35), var(--tile-shadow); z-index: 1; }
+  .tile img { position: absolute; inset: 8% 0 22%; margin: auto; height: 70%; max-width: 90%; object-fit: contain; filter: drop-shadow(0 3px 6px rgba(0,0,0,.25)); }
+  .tile .name { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 10px 6px; font-size: 13px; font-weight: 800; color: var(--ink);
+    border-radius: 0 0 15px 15px; /* the tile's 18px radius minus its 3px border */ background: rgba(255,255,255,.88); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+  .tile .noart { position: absolute; inset: 0 0 26px; display: grid; place-items: center; padding: 10px; text-align: center; font-weight: 800; color: var(--wii-deep); font-size: 15px; }
+  .arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 46px; height: 46px; border-radius: 50%; border: 3px solid var(--line);
+    background: #fff; color: var(--wii-deep); font-size: 22px; font-weight: 800; box-shadow: var(--tile-shadow); z-index: 2; }
+  .arrow.l { left: -24px; } .arrow.r { right: -24px; }
+  .arrow[disabled] { opacity: 0; pointer-events: none; }
+  .dots { display: flex; justify-content: center; gap: 8px; margin-top: 14px; }
+  .dots span { width: 9px; height: 9px; border-radius: 50%; background: #c6ccd3; }
+  .dots span.on { background: var(--wii); }
+
+  /* list view */
+  .list { background: var(--panel); border: 2px solid var(--line); border-radius: 18px; box-shadow: var(--tile-shadow); overflow: hidden; }
+  .row { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px 14px; border-top: 1px solid #eceef1; cursor: pointer; }
+  .row:first-child { border-top: 0; }
+  .row:hover { background: #f3fbfe; }
+  .row img, .row .ph { width: 42px; height: 58px; object-fit: contain; border-radius: 4px; background: #f0f2f4; }
+  .row .t { font-weight: 800; overflow-wrap: anywhere; }
+  .row .m { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .row .sz { color: var(--muted); font-weight: 700; white-space: nowrap; }
+
+  /* jobs */
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 28px 0 10px; }
+  .jobs { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .jobs ul { list-style: none; margin: 0; padding: 0; }
+  .jobs li { padding: 8px 0; border-top: 1px solid #eceef1; overflow-wrap: anywhere; }
+  .jobs li:first-child { border-top: 0; }
+  .chip { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; color: #fff; background: var(--muted); margin-right: 6px; }
+  .chip.installed { background: var(--good); } .chip.failed { background: var(--bad); }
+  .chip.converting, .chip.receiving, .chip.handing-off, .chip.done { background: var(--wii); }
+  .chip.throttled { background: #e6a817; } .chip.error { background: var(--bad); }
+  .chip.requested { background: var(--muted); } .chip.in-progress { background: var(--wii); }
+  .empty-note { color: var(--muted); }
+
+  /* bottom bar, like the Wii Menu's */
+  .bottom { position: fixed; left: 0; right: 0; bottom: 0; height: 96px; pointer-events: none; z-index: 5; }
+  .bottom svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .clock { position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%); text-align: center; color: #9aa1aa; }
+  .clock .time { font-size: 30px; font-weight: 800; letter-spacing: 1px; line-height: 1; }
+  .clock .date { font-size: 13px; font-weight: 800; color: var(--muted); }
+  .round { position: absolute; bottom: 14px; width: 66px; height: 66px; border-radius: 50%; border: 3px solid #c8cdd4; background: radial-gradient(circle at 50% 35%, #fff, #e8ebee);
+    box-shadow: 0 4px 10px rgba(40,50,70,.18); pointer-events: auto; font-weight: 800; color: #9aa1aa; font-size: 15px; }
+  .round:hover { border-color: var(--wii); color: var(--wii-deep); }
+  .round.left { left: max(16px, calc(50% - 560px)); } .round.right { right: max(16px, calc(50% - 560px)); font-size: 30px; color: var(--wii-deep); }
+
+  /* modal */
+  .modal { position: fixed; inset: 0; background: rgba(30, 40, 55, .35); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+  .modal.open { display: flex; }
+  .sheet { width: min(560px, 100%); max-height: 90vh; overflow: auto; background: #fff; border-radius: 22px; border: 3px solid var(--line); padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,.2); }
+  .sheet h3 { margin: 0 0 4px; font-size: 20px; }
+  .drop { border: 3px dashed var(--line); border-radius: 16px; padding: 30px 16px; text-align: center; color: var(--muted); cursor: pointer; margin: 14px 0; }
+  .drop.over { border-color: var(--wii); color: var(--wii-deep); background: #f3fbfe; }
+  .urlrow { display: flex; gap: 8px; flex-wrap: wrap; }
+  .urlrow input { flex: 1 1 220px; min-width: 0; padding: 9px 12px; border-radius: 12px; border: 2px solid var(--line); font: inherit; }
+  .plain { border: 2px solid var(--line); background: #fff; color: var(--ink); border-radius: 999px; padding: 8px 16px; font-weight: 800; }
+  progress { width: 100%; height: 12px; }
+  .detail { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 18px; align-items: start; }
+  .detail img { width: 160px; border-radius: 6px; box-shadow: 0 3px 10px rgba(0,0,0,.18); }  /* GameTDB covers are 160x224 */
+  .detail dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 10px 0 0; font-size: 14px; }
+  .detail dt { color: var(--muted); } .detail dd { margin: 0; overflow-wrap: anywhere; }
+  .detail .sub { color: var(--muted); font-size: 14px; margin-top: 2px; }
+  .detail > .synopsis, .detail > .infonote { grid-column: 1 / -1; }  /* full width under cover + facts */
+  .synopsis { margin: 4px 0 0; font-weight: 500; line-height: 1.5; white-space: pre-line; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .tags span { background: #eef8fc; color: var(--wii-deep); border: 1px solid #cdeaf5; border-radius: 999px; padding: 1px 10px; font-size: 12px; font-weight: 800; }
+  .infonote { color: var(--muted); font-size: 13px; margin-top: 12px; }
+  .actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+  .mini { display: inline-flex; align-items: center; border: 0; background: none; padding: 0; color: var(--wii-deep); font: inherit; font-size: 12px; font-weight: 800; text-transform: none; letter-spacing: 0; cursor: pointer; }
+  .mini:hover { color: var(--wii); }
+  .badge { display: inline-block; min-width: 18px; margin-left: 5px; padding: 0 5px; border-radius: 999px; background: var(--wii); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+  .badge.bad { background: var(--bad); }
+  [hidden] { display: none !important; }  /* class display rules mustn't override the hidden attribute */
+  .links { display: flex; gap: 10px; font-size: 13px; }
+  .links a { color: var(--muted); text-decoration: none; } .links a:hover { color: var(--wii-deep); }
+  #actModal .jobs { margin-top: 12px; }
+  footer { text-align: center; margin-top: 30px; color: var(--muted); font-size: 13px; }
+  footer a { color: var(--wii-deep); }
+
+  @media (max-width: 700px) {
+    .arrow.l { left: -8px; } .arrow.r { right: -8px; }
+    .arrow { width: 38px; height: 38px; font-size: 18px; }
+    .clock .time { font-size: 24px; }
+    .round { width: 56px; height: 56px; }
+    .detail { grid-template-columns: 1fr; } .detail img { width: 140px; }
+    .search { flex-basis: 100%; order: 5; }
+  }
+  .uptxt { font-size: 13px; color: var(--muted); margin: 4px 0 10px; overflow-wrap: anywhere; }
+
+  /* Add popup tabs + game requests */
+  .tabs { margin: 12px 0 2px; }
+  .rq-search { width: 100%; margin: 12px 0 8px; padding: 9px 14px; border-radius: 999px; border: 2px solid var(--line); font: inherit; color: var(--ink); }
+  .rq-list { list-style: none; margin: 0; padding: 0; }
+  #rqResults { max-height: 300px; overflow-y: auto; }
+  .rq-list li { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid #eceef1; }
+  .rq-list li:first-child { border-top: 0; }
+  .rq-list img, .rq-list .ph { width: 36px; height: 50px; object-fit: contain; border-radius: 3px; background: #f0f2f4; }
+  .rq-list .t { font-weight: 800; overflow-wrap: anywhere; }
+  .rq-list .m { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .rq-list .note { color: var(--ink); font-weight: 500; font-size: 13px; }
+  .rq-list .empty-note { display: block; padding: 6px 0; }
+  .rq-btn { border: 2px solid var(--wii); background: #fff; color: var(--wii-deep); border-radius: 999px; padding: 4px 12px; font-weight: 800; font-size: 13px; white-space: nowrap; }
+  .rq-btn:hover:not([disabled]) { background: var(--wii); color: #fff; }
+  .rq-btn[disabled] { border-color: var(--line); color: var(--muted); cursor: default; }
+  .rq-btn.x { border-color: var(--line); color: var(--muted); }
+  .rq-btn.x:hover { border-color: var(--bad); background: var(--bad); color: #fff; }
+  .rq-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  #addModal h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 16px 0 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><b>pi</b>wii</div>
+    <div class="spacer"></div>
+    <input id="q" class="search" type="search" placeholder="Search games" aria-label="Search games">
+    <div class="seg" role="group" aria-label="View">
+      <button id="vgrid" class="on">Menu</button><button id="vlist">List</button>
+    </div>
+    <button class="add-btn" id="addTop">+ Add game</button>
+    <nav class="links"><a href="/logout">Sign out</a></nav>
+  </header>
+
+  <section class="status" aria-label="Pi status">
+    <div class="card"><div class="k">Status</div><div class="pi-card"><span class="dot" id="pidot"></span><div><div class="v" id="pihead">Checking the Pi…</div><div class="s" id="pisub"></div></div></div></div>
+    <div class="card"><div class="k">Virtual USB</div><div class="pi-card"><span class="dot idle" id="ddrive"></span><div class="v" id="sdrive">–</div></div></div>
+    <div class="card"><div class="k">Wii</div><div class="pi-card"><span class="dot idle" id="dwii"></span><div class="v" id="swii">–</div></div></div>
+    <div class="card"><div class="k khead"><span>Last sync</span><button class="mini" id="actBtn" title="Upload and sync history" aria-label="History"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7.5V12l3 2"/></svg><span class="badge bad" id="actBadge" hidden></span></button></div><div class="pi-card"><span class="dot idle" id="dsync"></span><div><div class="v" id="ssync">–</div><div class="s" id="ssyncwhen"></div></div></div></div>
+    <div class="card wide"><div class="k khead"><span id="t7title">Drive</span><span class="max" id="t7max"></span></div><div class="bar" id="t7"><i></i><span class="used"></span><span class="free"></span></div></div>
+    <div class="card wide"><div class="k khead"><span id="sttitle">Pi SD card</span><span class="max" id="stmax"></span></div><div class="bar" id="st"><i></i><span class="used"></span><span class="free"></span></div></div>
+  </section>
+
+  <section class="banner" id="banner" hidden aria-live="polite" aria-label="Activity in progress"><ul id="bannerList"></ul></section>
+
+  <section class="stage" id="gridview" aria-label="Games">
+    <button class="arrow l" id="prev" aria-label="Previous page">‹</button>
+    <div class="grid" id="grid"></div>
+    <button class="arrow r" id="next" aria-label="Next page">›</button>
+    <div class="dots" id="dots"></div>
+  </section>
+  <section class="stage" id="listview" hidden aria-label="Games list"><div class="list" id="list"></div></section>
+
+</div>
+
+<div class="bottom">
+  <svg viewBox="0 0 1000 96" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0 30 H330 C370 30 380 6 420 6 H580 C620 6 630 30 670 30 H1000 V96 H0 Z" fill="#fff" stroke="#cdd2d9" stroke-width="2" vector-effect="non-scaling-stroke"/>
+  </svg>
+  <button class="round left" id="toTop" aria-label="Back to top">Wii</button>
+  <div class="clock"><div class="time" id="time">--:--</div><div class="date" id="date"></div></div>
+  <button class="round right" id="addBottom" aria-label="Add game">+</button>
+</div>
+
+<div class="modal" id="addModal" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+  <div class="sheet">
+    <h3 id="addTitle">Add a game</h3>
+    <div class="seg tabs" role="tablist" aria-label="Add a game">
+      <button id="tabUp" class="on" role="tab">Upload</button><button id="tabRq" role="tab">Request</button>
+    </div>
+    <div id="paneUp">
+    <div class="s" style="color:var(--muted);margin-top:8px">It's converted on the server, then copied onto the Wii's drive the next time the Pi syncs.</div>
+    <div class="drop" id="drop">Drop an .iso / .wbfs / .ciso / .wia here, or click to choose</div>
+    <input id="file" type="file" accept=".iso,.wbfs,.ciso,.wia,.wdf,.gcz" multiple hidden>
+    <progress id="up" value="0" max="1" hidden></progress>
+    <div id="uptxt" class="uptxt" hidden></div>
+    <form class="urlrow" id="urlform">
+      <input id="url" type="url" placeholder="…or a direct link to a game file" required>
+      <button class="add-btn" style="padding:8px 16px">Add</button>
+    </form>
+    <div id="impBox" hidden>
+      <h4>In the import folder on the server</h4>
+      <ul class="rq-list" id="impList"></ul>
+    </div>
+    </div>
+    <div id="paneRq" hidden>
+      <div class="s" style="color:var(--muted);margin-top:8px">Don't have the file? Ask for the game instead. It shows as done here once someone uploads it.</div>
+      <input id="rqq" class="rq-search" type="search" placeholder="Search Wii games by name or ID" aria-label="Search Wii games">
+      <ul class="rq-list" id="rqResults"></ul>
+      <h4>Requests</h4>
+      <ul class="rq-list" id="rqMine"><li class="empty-note">No requests yet.</li></ul>
+    </div>
+    <div class="actions"><button class="plain" data-close>Done</button></div>
+  </div>
+</div>
+
+<div class="modal" id="actModal" role="dialog" aria-modal="true" aria-labelledby="actTitle">
+  <div class="sheet"><h3 id="actTitle">History</h3>
+    <div class="jobs">
+      <div class="card"><div class="k">Jobs</div><ul id="jobs"><li class="empty-note">No jobs since the server started.</li></ul></div>
+      <div class="card"><div class="k">Waiting for the Pi</div><ul id="pending"><li class="empty-note">Nothing waiting.</li></ul></div>
+    </div>
+    <div class="actions"><button class="plain" data-close>Close</button></div>
+  </div>
+</div>
+
+<div class="modal" id="gameModal" role="dialog" aria-modal="true">
+  <div class="sheet"><div class="detail" id="detail"></div><div class="actions"><button class="plain" data-close>Close</button></div></div>
+</div>
+
+<script src="/upload.js?v=2"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Sizes in decimal units (GB = 10^9 bytes), matching Finder and drive labels.
+// The web server and API stay in bytes; this is display only.
+const size = b => {
+  for (const [u, n] of [['TB', 1e12], ['GB', 1e9], ['MB', 1e6]]) if (b >= n) return `${(b / n).toFixed(b / n >= 10 ? 0 : 1)} ${u}`;
+  return `${Math.round(b / 1e3)} KB`;
+};
+const ago = s => s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`;
+
+// Cover art (GameTDB, the same source USB Loader GX uses), served from the
+// web server's cache; the web server fetches and caches anything it doesn't have yet.
+const coverUrl = id => `/api/cover/${encodeURIComponent(id)}`;
+function coverImg(id, alt, cls = '') {
+  return `<img class="${cls}" loading="lazy" alt="${esc(alt)}" src="${coverUrl(id)}" onerror="noCover(this)">`;
+}
+window.noCover = img => {
+  img.replaceWith(Object.assign(document.createElement('div'), { className: img.closest('.tile') ? 'noart' : 'ph', textContent: img.closest('.tile') ? img.alt : '' }));
+};
+
+let games = [], view = localStorage.getItem('piwii-view') || 'grid', page = 0, query = '';
+const titleOf = g => g.title || g.folder.replace(/\s*\[[A-Z0-9]{6}\](\.wbfs)?$/i, '');
+const filtered = () => games.filter(g => !query || (titleOf(g) + ' ' + g.id + ' ' + g.folder).toLowerCase().includes(query));
+
+function perPage() {
+  const w = innerWidth;
+  const cols = w < 520 ? 2 : w < 900 ? 3 : 4;
+  document.documentElement.style.setProperty('--cols', cols);
+  return cols * 3;
+}
+
+// A tile's blurred, washed-out cover background, rendered once per game into a canvas and used as the tile's
+// own background (see the .tile CSS for why). The cover is center-cropped to the tile's 16:10 shape at 96x60,
+// blurred with three box-blur passes (close to a Gaussian, like the old CSS blur(16px) at tile size; canvas
+// `filter` would be simpler but Safari doesn't support it), saturated a little and faded toward the tile color.
+// Cached per game ID as a data URL; null when the game has no cover.
+const TINT_W = 96, TINT_H = 60, TINT_RADIUS = 5;
+const tints = new Map(), tintJobs = new Map();
+function boxBlur(src, dst, w, h, r, horizontal) {
+  // One box-blur pass over RGB, edges clamped (like the old blur layer, which extended past the tile).
+  const len = horizontal ? w : h, lines = horizontal ? h : w, win = 2 * r + 1;
+  for (let line = 0; line < lines; line++) {
+    const at = i => 4 * (horizontal ? line * w + i : i * w + line);
+    for (let k = 0; k < 3; k++) {
+      let sum = 0;
+      for (let i = -r; i <= r; i++) sum += src[at(Math.min(len - 1, Math.max(0, i))) + k];
+      for (let i = 0; i < len; i++) {
+        dst[at(i) + k] = sum / win;
+        sum += src[at(Math.min(len - 1, i + r + 1)) + k] - src[at(Math.max(0, i - r)) + k];
+      }
+    }
+  }
+}
+function tileTint(id) {
+  if (tints.has(id)) return Promise.resolve(tints.get(id));
+  if (!tintJobs.has(id)) tintJobs.set(id, new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = TINT_W; c.height = TINT_H;
+      const ctx = c.getContext('2d');
+      // Center crop to the tile's aspect, like background-size: cover.
+      const scale = Math.max(TINT_W / img.naturalWidth, TINT_H / img.naturalHeight);
+      const sw = TINT_W / scale, sh = TINT_H / scale;
+      ctx.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, TINT_W, TINT_H);
+      const px = ctx.getImageData(0, 0, TINT_W, TINT_H), d = px.data, tmp = new Float32Array(d.length);
+      const buf = Float32Array.from(d);
+      for (let pass = 0; pass < 3; pass++) {
+        boxBlur(buf, tmp, TINT_W, TINT_H, TINT_RADIUS, true);
+        boxBlur(tmp, buf, TINT_W, TINT_H, TINT_RADIUS, false);
+      }
+      const bg = [250, 251, 252];
+      for (let i = 0; i < d.length; i += 4) {
+        const gray = .299 * buf[i] + .587 * buf[i + 1] + .114 * buf[i + 2];
+        for (let k = 0; k < 3; k++) {
+          const sat = Math.min(255, Math.max(0, gray + (buf[i + k] - gray) * 1.3));  // saturate(1.3)
+          d[i + k] = sat * .55 + bg[k] * .45;                                          // opacity .55 over the tile
+        }
+        d[i + 3] = 255;
+      }
+      ctx.putImageData(px, 0, 0);
+      tints.set(id, c.toDataURL('image/jpeg', .9)); resolve(tints.get(id));
+    };
+    img.onerror = () => { tints.set(id, null); resolve(null); };
+    img.src = coverUrl(id);
+  }));
+  return tintJobs.get(id);
+}
+
+function renderGrid() {
+  // Menu view: most recently added first (library.json "added"; older entries without it go last).
+  const list = filtered().slice().sort((a, b) => (b.added || 0) - (a.added || 0) || titleOf(a).localeCompare(titleOf(b)));
+  const n = perPage(), pages = Math.max(1, Math.ceil(list.length / n));
+  page = Math.min(page, pages - 1);
+  const slice = list.slice(page * n, page * n + n);
+  const tiles = slice.map((g, i) => {
+    const tint = tints.get(g.id);
+    return `<button class="tile" data-i="${games.indexOf(g)}" data-id="${esc(g.id)}" aria-label="${esc(titleOf(g))}"${tint ? ` style="background-image:url('${tint}')"` : ''}>
+      ${coverImg(g.id, titleOf(g))}
+      <div class="name">${esc(titleOf(g))}</div></button>`;
+  });
+  while (tiles.length < n) tiles.push('<div class="tile empty" aria-hidden="true"></div>');
+  $('grid').innerHTML = tiles.join('');
+  $('grid').querySelectorAll('.tile[data-id]:not([style])').forEach(t => tileTint(t.dataset.id).then(url => {
+    if (url && t.isConnected) t.style.backgroundImage = `url('${url}')`;
+  }));
+  $('prev').disabled = page === 0; $('next').disabled = page >= pages - 1;
+  $('dots').innerHTML = pages > 1 ? Array.from({ length: pages }, (_, i) => `<span class="${i === page ? 'on' : ''}"></span>`).join('') : '';
+}
+
+function renderList() {
+  const list = filtered().slice().sort((a, b) => titleOf(a).localeCompare(titleOf(b)));
+  $('list').innerHTML = list.length ? list.map(g => `<div class="row" data-i="${games.indexOf(g)}" tabindex="0">
+      ${coverImg(g.id, titleOf(g))}
+      <div><div class="t">${esc(titleOf(g))}</div><div class="m">${esc(g.id)} · ${esc(g.folder)}</div></div>
+      <div class="sz">${size(g.bytes)}</div></div>`).join('')
+    : `<div class="row" style="cursor:default"><div></div><div class="m">${games.length ? 'No games match.' : 'No games yet.'}</div><div></div></div>`;
+}
+
+function render() {
+  $('gridview').hidden = view !== 'grid'; $('listview').hidden = view !== 'list';
+  $('vgrid').classList.toggle('on', view === 'grid'); $('vlist').classList.toggle('on', view === 'list');
+  view === 'grid' ? renderGrid() : renderList();
+}
+
+// GameTDB controller type -> label
+const CONTROLS = { wiimote: 'Wii Remote', nunchuk: 'Nunchuk', classiccontroller: 'Classic Controller', gamecube: 'GameCube Controller',
+  balanceboard: 'Balance Board', motionplus: 'Wii MotionPlus', wheel: 'Wii Wheel', zapper: 'Wii Zapper', wiispeak: 'Wii Speak',
+  microphone: 'Microphone', guitar: 'Guitar', drums: 'Drums', keyboard: 'Keyboard', dancepad: 'Dance Pad', udraw: 'uDraw' };
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function showGame(i) {
+  const g = games[i]; if (!g) return;
+  const region = { E: 'USA', P: 'Europe (PAL)', J: 'Japan', K: 'Korea' }[g.id[3]] || g.id[3];
+  const base = [['ID', g.id], ['Region', region], ['Size', size(g.bytes)], ['Folder', g.folder]];
+  const draw = (info, note) => {
+    const rows = [];
+    if (info) {
+      if (info.developer || info.publisher) rows.push(['Made by', [info.developer, info.publisher].filter((x, k, a) => x && a.indexOf(x) === k).join(' / ')]);
+      if (info.date && info.date.year) rows.push(['Released', [info.date.day, info.date.month && MONTHS[info.date.month - 1], info.date.year].filter(Boolean).join(' ')]);
+      if (info.players) rows.push(['Players', info.players + (info.online_players ? ` · ${info.online_players} online` : '')]);
+      const ctl = info.controls.filter(c => c.type !== 'mii');  // 'mii' means Mii support, not a controller
+      const req = ctl.filter(c => c.required).map(c => CONTROLS[c.type] || c.type);
+      const opt = ctl.filter(c => !c.required).map(c => CONTROLS[c.type] || c.type);
+      if (req.length) rows.push(['Needs', req.join(', ')]);
+      if (opt.length) rows.push(['Also works with', opt.join(', ')]);
+      if (info.online_features.length) rows.push(['Online', info.online_features.join(', ')]);
+      if (info.rating) rows.push(['Rating', `${info.rating.type} ${info.rating.value}${info.rating.descriptors.length ? ` (${info.rating.descriptors.join(', ')})` : ''}`]);
+    }
+    const tags = info ? info.genres.map(t => `<span>${esc(t)}</span>`).join('') : '';
+    $('detail').innerHTML = `${coverImg(g.id, titleOf(g))}<div><h3>${esc(info && info.title || titleOf(g))}</h3>
+      ${info && info.publisher ? `<div class="sub">${esc(info.publisher)}${info.date && info.date.year ? ` · ${esc(info.date.year)}` : ''}</div>` : ''}
+      ${tags ? `<div class="tags">${tags}</div>` : ''}
+      <dl>${[...rows, ...base].map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>
+      ${info && info.synopsis ? `<p class="synopsis">${esc(info.synopsis)}</p>` : ''}
+      ${note ? `<div class="infonote">${esc(note)}</div>` : ''}`;
+  };
+  draw(null, 'Loading game info…');
+  openModal('gameModal');
+  fetch(`/api/game/${encodeURIComponent(g.id)}`).then(r => r.json()).then(d => {
+    if (!$('gameModal').classList.contains('open')) return;
+    draw(d.info, d.info ? '' : d.status === 'not in GameTDB' ? 'GameTDB has no details for this game.'
+      : 'Game details will appear once the server downloads the GameTDB database (it retries hourly).');
+  }).catch(() => draw(null, "Couldn't load game info."));
+}
+
+// Usage bar: total in the card title; "used" label in the filled part and
+// "free" in the empty part. A label that doesn't fit its part moves outside
+// (used) or hides (free) rather than overlapping.
+function setBar(id, used, total) {
+  const bar = $(id), fill = bar.querySelector('i'), u = bar.querySelector('.used'), f = bar.querySelector('.free');
+  const pct = Math.min(100, Math.max(0, used / total * 100));
+  fill.style.width = pct.toFixed(1) + '%'; fill.classList.toggle('hi', pct > 85);
+  $(id + 'max').textContent = size(total);
+  u.textContent = `${size(used)} used`; f.textContent = `${size(total - used)} free`;
+  const W = bar.clientWidth, fillW = W * pct / 100;
+  const inside = u.offsetWidth <= fillW;
+  u.classList.toggle('out', !inside);
+  u.style.left = inside ? '0' : fillW + 'px';
+  const usedEnd = inside ? fillW : fillW + u.offsetWidth;
+  f.style.visibility = W - usedEnd >= f.offsetWidth ? 'visible' : 'hidden';
+}
+
+function showPi(v, lib) {
+  const p = v.pi || {}, sync = v.sync || {};
+  $('pidot').className = 'dot ' + (!v.online ? 'off' : v.syncing ? 'busy' : 'on');
+  $('pihead').textContent = !v.online ? 'Pi offline' : v.syncing ? 'Pi syncing' : 'Pi online';
+  $('pisub').textContent = !v.online ? (v.age_s == null ? 'no status yet' : `last heard ${ago(v.age_s)}`)
+    : v.syncing ? (sync.detail || '') : `up ${Math.floor(p.uptime_s / 86400)}d ${Math.floor(p.uptime_s % 86400 / 3600)}h`;
+  const dot = (id, cls) => { $(id).className = 'dot ' + (v.online ? cls : 'idle'); };
+  // Hardware names come from the Pi's /etc/default/piwii (PIWII_DRIVE_LABEL, PIWII_SD_LABEL).
+  if (v.pi) {
+    $('t7title').textContent = p.drive_label ? `Drive • ${p.drive_label}` : 'Drive';
+    $('sttitle').textContent = p.sd_label ? `Pi • ${p.sd_label}` : 'Pi SD card';
+  }
+  $('sdrive').textContent = !v.pi ? '–' : p.t7 !== 'present' ? 'Drive missing!' : p.gadget === 'attached' ? 'Plugged into the Wii'
+    : v.syncing ? 'Unplugged for sync' : 'Unplugged from the Wii';
+  dot('ddrive', !v.pi ? 'idle' : p.t7 !== 'present' ? 'off' : p.gadget === 'attached' ? 'on' : v.syncing ? 'busy' : 'warn');
+  const reading = p.wii_link === 'configured' && p.wii_kib_per_s > 0;
+  $('swii').textContent = !v.pi ? '–' : p.wii_link === 'configured' ? `Connected${reading ? ` · ${p.wii_kib_per_s} KiB/s` : ''}` : 'Not connected';
+  dot('dwii', p.wii_link === 'configured' ? (reading ? 'busy' : 'on') : 'idle');
+  const syncBad = sync.phase === 'idle' && /error|[1-9]\d* failed/.test(sync.detail || '');
+  dot('dsync', !sync.phase ? 'idle' : v.syncing ? 'busy' : syncBad ? 'off' : 'on');
+  $('ssync').textContent = sync.phase ? (sync.phase === 'idle' ? sync.detail.replace(/^last sync: /, '') : sync.detail) : 'None yet';
+  $('ssyncwhen').textContent = sync.updated ? ago(Math.max(0, Math.floor(Date.now() / 1000) - sync.updated)) : '';
+  if (p.staging_total_bytes) setBar('st', p.staging_total_bytes - p.staging_free_bytes, p.staging_total_bytes);
+  // Drive total: from library.json (filesystem) once synced, else the partition size the Pi reports.
+  const t7Total = (lib && lib.total_bytes) || p.t7_part_bytes;
+  if (lib && t7Total) setBar('t7', t7Total - lib.free_bytes, t7Total);
+}
+
+const ACTIVE = new Set(['queued', 'receiving', 'converting', 'handing-off', 'done']);
+function showBanner(jobs, pending, pi) {
+  const items = [];
+  const jobFolders = new Set();
+  for (const j of jobs) {
+    if (!ACTIVE.has(j.state)) continue;
+    if (j.folder) jobFolders.add(j.folder);
+    const label = j.state === 'done' ? 'waiting for Pi' : j.state;
+    items.push(`<li><span class="chip ${esc(j.state)}">${esc(label)}</span>${esc(j.title ? `${j.title} [${j.game_id}]` : j.source)}<div class="d">${esc(j.detail)}</div></li>`);
+  }
+  const piDetail = pi && pi.syncing && pi.sync ? `Pi: ${pi.sync.detail}` : 'waiting for the Pi to sync';
+  for (const p of pending) {
+    if (jobFolders.has(p)) continue;
+    items.push(`<li><span class="chip done">waiting for Pi</span>${esc(p)}<div class="d">${esc(piDetail)}</div></li>`);
+  }
+  if (!items.length && pi && pi.syncing && pi.sync) {
+    items.push(`<li><span class="chip done">Pi</span>${esc(pi.sync.game || 'sync')}<div class="d">${esc(pi.sync.detail)}</div></li>`);
+  }
+  $('banner').hidden = !items.length;
+  // History badge: failed jobs (in-flight ones are already in the banner).
+  const failed = jobs.filter(j => j.state === 'failed').length;
+  $('actBadge').hidden = !failed; $('actBadge').textContent = failed;
+  $('actBtn').title = failed ? `${failed} failed — open history` : 'Upload and sync history';
+  $('bannerList').innerHTML = items.join('');
+}
+
+function showJobs(jobs, pending) {
+  $('jobs').innerHTML = jobs.length ? jobs.map(j => `<li><span class="chip ${esc(j.state)}">${esc(j.state)}</span>${esc(j.title ? `${j.title} [${j.game_id}]` : j.source)}<div class="empty-note" style="font-size:13px">${esc(j.detail)}</div></li>`).join('')
+    : '<li class="empty-note">No jobs since the server started.</li>';
+  $('pending').innerHTML = pending.length ? pending.map(p => `<li>${esc(p)}</li>`).join('') : '<li class="empty-note">Nothing waiting.</li>';
+}
+
+let lastLibKey = '';
+async function refresh() {
+  try {
+    const [pi, jobs, lib] = await Promise.all(['/api/pi', '/api/jobs', '/api/library'].map(u => fetch(u).then(r => { if (r.status === 401) { location.href = '/login'; throw new Error('login'); } return r.json(); })));
+    const installed = lib.installed || {};
+    showPi(pi, lib.installed); showJobs(jobs, lib.pending || []); showBanner(jobs, lib.pending || [], pi);
+    const key = JSON.stringify(installed.games || []);
+    if (key !== lastLibKey) { lastLibKey = key; games = installed.games || []; render(); }
+  } catch (e) { $('pidot').className = 'dot off'; $('pihead').textContent = 'Server unreachable'; }
+}
+
+// add game
+function openModal(id) { $(id).classList.add('open'); }
+document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m || e.target.hasAttribute('data-close')) m.classList.remove('open'); }));
+addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.modal.open').forEach(m => m.classList.remove('open')); });
+$('addTop').onclick = $('addBottom').onclick = () => { openModal('addModal'); loadImports(); };
+function addTab(t) {
+  $('paneUp').hidden = t !== 'up'; $('paneRq').hidden = t !== 'rq';
+  $('tabUp').classList.toggle('on', t === 'up'); $('tabRq').classList.toggle('on', t === 'rq');
+  if (t === 'rq') { loadRequests(); $('rqq').focus(); }
+}
+$('tabUp').onclick = () => addTab('up');
+
+// Files copied straight into the import folder on the server host (rsync etc.); shown only when there are some.
+async function loadImports() {
+  try {
+    const d = await fetch('/api/import').then(r => r.json());
+    $('impBox').hidden = !d.files.length;
+    $('impList').innerHTML = d.files.map(f => `<li><div class="ph"></div>
+        <div><div class="t">${esc(f.filename)}</div><div class="m">${size(f.size)}${f.settling ? ' · still copying…' : ''}</div></div>
+        <button class="rq-btn" data-imp="${esc(f.filename)}" ${f.settling ? 'disabled' : ''}>Import</button></li>`).join('');
+  } catch {}
+}
+$('impList').onclick = async e => {
+  const b = e.target.closest('[data-imp]'); if (!b) return;
+  b.disabled = true; b.textContent = 'Importing…';
+  const r = await fetch('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: b.dataset.imp }) });
+  if (!r.ok) alert((await r.json().catch(() => ({}))).detail || `Import failed (${r.status})`);
+  loadImports(); refresh();
+};
+$('tabRq').onclick = () => addTab('rq');
+
+// Game requests: search GameTDB, ask for a game; done once its ID is on the drive.
+const rqThumb = id => `<img loading="lazy" alt="" src="${coverUrl(id)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph'}))">`;
+const rqMeta = g => [g.year, g.region, g.publisher, g.id].filter(Boolean).map(esc).join(' · ');
+let rqTimer, rqSeq = 0;
+async function searchCatalog() {
+  const q = $('rqq').value.trim(), seq = ++rqSeq;
+  if (!q) { $('rqResults').innerHTML = ''; return; }
+  try {
+    const d = await fetch(`/api/catalog?q=${encodeURIComponent(q)}`).then(r => r.json());
+    if (seq !== rqSeq) return;  // a newer search already started
+    $('rqResults').innerHTML = d.results.length ? d.results.map(g => `<li>${rqThumb(g.id)}
+        <div><div class="t">${esc(g.title)}</div><div class="m">${rqMeta(g)}</div></div>
+        <button class="rq-btn" data-rq="${esc(g.id)}" ${g.on_drive || g.requested ? 'disabled' : ''}>${g.on_drive ? 'On the drive' : g.requested ? 'Requested' : 'Request'}</button></li>`).join('')
+      + (d.total > d.results.length ? `<li class="empty-note">${d.total - d.results.length} more; keep typing to narrow it down.</li>` : '')
+      : '<li class="empty-note">No Wii games match.</li>';
+  } catch { $('rqResults').innerHTML = '<li class="empty-note">Search failed.</li>'; }
+}
+$('rqq').oninput = () => { clearTimeout(rqTimer); rqTimer = setTimeout(searchCatalog, 200); };
+$('rqResults').onclick = async e => {
+  const b = e.target.closest('[data-rq]'); if (!b) return;
+  b.disabled = true;
+  const r = await fetch('/api/requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: b.dataset.rq }) });
+  if (!r.ok) { b.disabled = false; alert((await r.json().catch(() => ({}))).detail || `Request failed (${r.status})`); return; }
+  b.textContent = 'Requested';
+  loadRequests();
+};
+const RQ_CLASS = { 'in progress': 'done', done: 'installed', throttled: 'throttled', error: 'error' };
+const FINISHED = new Set(['done', 'on the drive']);
+// Requests are polled every 3 s while the tab is open. Each request keeps its own row: on a poll only its text
+// (status, age, note, button) is updated, so cover images aren't recreated and don't flash. Rebuilding the list
+// on every change did, and the "… ago" age changes on nearly every poll.
+async function loadRequests() {
+  const ul = $('rqMine');
+  let reqs;
+  try { reqs = await fetch('/api/requests').then(r => r.json()); }
+  catch { if (!ul.querySelector('li[data-rq]')) ul.innerHTML = '<li class="empty-note">Couldn\'t load requests.</li>'; return; }
+  if (!reqs.length) { ul.innerHTML = '<li class="empty-note">No requests yet.</li>'; return; }
+  ul.querySelectorAll('.empty-note').forEach(li => li.remove());
+  const rows = new Map([...ul.querySelectorAll('li[data-rq]')].map(li => [li.dataset.rq, li]));
+  reqs.forEach((g, i) => {
+    let li = rows.get(g.id);
+    if (li) rows.delete(g.id);
+    else {
+      li = document.createElement('li'); li.dataset.rq = g.id;
+      li.innerHTML = `${rqThumb(g.id)}<div class="rq-body"></div><div class="rq-acts">
+        <button class="rq-btn" data-retry="${esc(g.id)}" title="Ask for it again" hidden>Retry</button>
+        <button class="rq-btn x" data-unrq="${esc(g.id)}"></button></div>`;
+    }
+    const body = `<div class="t">${esc(g.title)}</div><div class="m">${g.status === 'on the drive' ? '<span class="chip installed">on the drive</span>'
+        : `<span class="chip ${RQ_CLASS[g.status] || ''}">${esc(g.status)}</span>`}${rqMeta(g)} · ${ago(Math.max(0, Math.floor(Date.now() / 1000) - g.requested_at))}</div>
+        ${g.note ? `<div class="note">${esc(g.note)}</div>` : ''}`;
+    if (li.rqBody !== body) li.querySelector('.rq-body').innerHTML = li.rqBody = body;
+    const btn = li.querySelector('[data-unrq]'), done = FINISHED.has(g.status);
+    btn.textContent = done ? 'Clear' : 'Cancel'; btn.title = done ? 'Clear' : 'Cancel request';
+    // A request the fulfilling app gave up on can be put back in its queue.
+    const retry = li.querySelector('[data-retry]');
+    retry.hidden = g.status !== 'error'; if (retry.hidden) retry.disabled = false;
+    if (ul.children[i] !== li) ul.insertBefore(li, ul.children[i] || null);
+  });
+  rows.forEach(li => li.remove());
+}
+$('rqMine').onclick = async e => {
+  const r = e.target.closest('[data-retry]');
+  if (r) {
+    r.disabled = true;
+    const res = await fetch(`/api/requests/${encodeURIComponent(r.dataset.retry)}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'requested' }) });
+    if (!res.ok) { r.disabled = false; alert('Couldn\'t retry the request.'); }
+    loadRequests(); return;
+  }
+  const b = e.target.closest('[data-unrq]'); if (!b) return;
+  b.disabled = true;
+  await fetch(`/api/requests/${encodeURIComponent(b.dataset.unrq)}`, { method: 'DELETE' });
+  loadRequests(); searchCatalog();
+};
+$('actBtn').onclick = () => openModal('actModal');
+// Chunked, resumable upload (upload.js); files go up one at a time.
+let uploadsQueued = 0, uploadFailed = false;
+function upload(file) {
+  if (uploadsQueued === 0) uploadFailed = false;
+  uploadsQueued++;
+  $('up').hidden = false; $('uptxt').hidden = false;
+  window.piwiiUpload(file, {
+    onProgress: (frac, sent, total) => {
+      $('up').value = frac;
+      const route = window.piwiiUploadRoute ? window.piwiiUploadRoute() : '';
+      $('uptxt').textContent = `Uploading ${file.name}${route ? ` via ${route}` : ''}: ${(sent / 1e6).toFixed(0)} / ${(total / 1e6).toFixed(0)} MB (${Math.floor(frac * 100)}%)`
+        + (uploadsQueued > 1 ? ` · ${uploadsQueued - 1} more queued` : '');
+    },
+    onDone: () => refresh(),
+    onError: msg => { uploadFailed = true; alert(`Upload failed: ${msg}`); },
+  }).then(() => {
+    if (--uploadsQueued === 0) {
+      $('up').hidden = true; $('up').value = 0; $('uptxt').hidden = true;
+      // All done: close the Add popup; the banner shows conversion and sync from here.
+      if (!uploadFailed) $('addModal').classList.remove('open');
+    }
+  });
+}
+const drop = $('drop');
+drop.onclick = () => $('file').click();
+$('file').onchange = e => { for (const f of e.target.files) upload(f); e.target.value = ''; };
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); for (const f of e.dataTransfer.files) upload(f); };
+$('urlform').onsubmit = async e => {
+  e.preventDefault();
+  const r = await fetch('/api/url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: $('url').value }) });
+  if (!r.ok) alert(await r.text()); else $('url').value = '';
+  refresh();
+};
+
+// view + navigation
+$('vgrid').onclick = () => { view = 'grid'; try { localStorage.setItem('piwii-view', view); } catch {} render(); };
+$('vlist').onclick = () => { view = 'list'; try { localStorage.setItem('piwii-view', view); } catch {} render(); };
+$('prev').onclick = () => { page--; renderGrid(); };
+$('next').onclick = () => { page++; renderGrid(); };
+$('q').oninput = e => { query = e.target.value.trim().toLowerCase(); page = 0; render(); };
+$('grid').onclick = $('list').onclick = e => { const t = e.target.closest('[data-i]'); if (t) showGame(+t.dataset.i); };
+$('list').onkeydown = e => { if (e.key === 'Enter') { const t = e.target.closest('[data-i]'); if (t) showGame(+t.dataset.i); } };
+$('toTop').onclick = () => scrollTo({ top: 0, behavior: 'smooth' });
+addEventListener('keydown', e => { if (view === 'grid' && !document.querySelector('.modal.open') && document.activeElement.tagName !== 'INPUT') {
+  if (e.key === 'ArrowRight' && !$('next').disabled) { page++; renderGrid(); }
+  if (e.key === 'ArrowLeft' && !$('prev').disabled) { page--; renderGrid(); } } });
+let lastPer = perPage();
+addEventListener('resize', () => { const n = perPage(); if (n !== lastPer) { lastPer = n; if (view === 'grid') renderGrid(); } });
+
+// clock, Wii Menu style
+function tick() {
+  const d = new Date();
+  $('time').textContent = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  $('date').textContent = d.toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
+}
+tick(); setInterval(tick, 1000 * 15);
+render(); refresh(); setInterval(refresh, 3000);
+// While the Add popup is open, keep its visible pane current: the import folder's files, or request statuses.
+setInterval(() => {
+  if (!$('addModal').classList.contains('open')) return;
+  if (!$('paneUp').hidden) loadImports();
+  if (!$('paneRq').hidden) loadRequests();
+}, 3000);
+</script>
+</body>
+</html>

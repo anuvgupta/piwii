@@ -1,0 +1,9 @@
+# This setup's live rule: the game drive is a 1 TB Samsung T7 (serial below).
+# For another setup, start from 99-piwii-drive.rules.example instead.
+#
+# piwii: the Wii owns the game drive (passed through as a USB gadget drive),
+# so the Pi's desktop must never mount it on its own. UDISKS_IGNORE hides the
+# disk and its partition from udisks (no file-manager icon); UDISKS_AUTO=0 also
+# turns off automount in case a desktop component ignores the hide hint.
+# Matched by serial number so a different USB disk still behaves normally.
+SUBSYSTEM=="block", ENV{ID_SERIAL_SHORT}=="S6XBNS0W512374X", ENV{UDISKS_IGNORE}="1", ENV{UDISKS_AUTO}="0"

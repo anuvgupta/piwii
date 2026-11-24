@@ -1,0 +1,15 @@
+# piwii: RAM-only folder for the status files the web page polls, so the
+# frequent status writes never touch the SD card. Emptied on reboot; the
+# status loop refills it within seconds. The filename must match Where=.
+[Unit]
+Description=piwii: RAM-only status folder in the NFS staging area
+Before=nfs-server.service piwii-status.service
+
+[Mount]
+What=tmpfs
+Where=/srv/piwii/staging/status
+Type=tmpfs
+Options=size=1m,uid=1000,gid=1000,mode=755
+
+[Install]
+WantedBy=multi-user.target

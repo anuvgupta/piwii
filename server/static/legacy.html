@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>piwii</title>
+<link rel="icon" href="/favicon-32.png?v=4" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/favicon.png?v=4">
+<style>
+  :root { --bg: #f6f6f4; --fg: #1d1d1b; --muted: #6b6b66; --card: #fff; --line: #deded8; --accent: #2f6fde; --bad: #c43d3d; --good: #2e8a4e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --fg: #ececea; --muted: #9a9a94; --card: #20201e; --line: #34342f; --accent: #6d9cf0; --bad: #ef6b6b; --good: #5fc283; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 28px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  p.sub { margin: 0 0 20px; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  input[type=url] { flex: 1 1 260px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  button { padding: 8px 14px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+  #drop { border: 2px dashed var(--line); border-radius: 10px; padding: 28px 16px; text-align: center; color: var(--muted); cursor: pointer; margin-bottom: 12px; }
+  #drop.over { border-color: var(--accent); color: var(--fg); }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: 8px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+  li:first-child { border-top: 0; }
+  .state { font-weight: 600; }
+  .failed { color: var(--bad); } .installed { color: var(--good); }
+  .muted { color: var(--muted); font-size: 13px; }
+  progress { width: 100%; }
+  #pi { margin-bottom: 20px; }
+  #pi .head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.on { background: var(--good); } .dot.off { background: var(--bad); } .dot.busy { background: var(--accent); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 10px 0 0; font-size: 14px; }
+  dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+  .uptxt { font-size: 13px; color: var(--muted); margin: 4px 0 10px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <h1>piwii</h1>
+  <p class="sub">Add a Wii game. It's converted here, then copied onto the Wii's drive the next time the Pi syncs.</p>
+
+  <div id="pi" class="card"><div class="head"><span class="dot"></span><span id="pihead">Checking the Pi…</span></div><dl id="pidl"></dl></div>
+
+  <div class="card">
+    <div id="drop">Drop an .iso / .wbfs / .ciso / .wia here, or click to choose</div>
+    <input id="file" type="file" accept=".iso,.wbfs,.ciso,.wia,.wdf,.gcz" hidden>
+    <progress id="up" value="0" max="1" hidden></progress>
+    <div id="uptxt" class="uptxt" hidden></div>
+    <form id="urlform" class="row">
+      <input id="url" type="url" placeholder="…or a direct link to a game file" required>
+      <button>Add</button>
+    </form>
+  </div>
+
+  <h2>Jobs</h2>
+  <div class="card"><ul id="jobs"><li class="muted">None yet.</li></ul></div>
+
+  <h2>Waiting for the Pi</h2>
+  <div class="card"><ul id="pending"><li class="muted">Nothing waiting.</li></ul></div>
+
+  <h2>On the drive</h2>
+  <div class="card"><ul id="installed"><li class="muted">The Pi hasn't reported its library yet.</li></ul></div>
+  <p class="muted" style="margin-top:24px"><a href="/">Wii Menu view</a> · <a href="/logout">Sign out</a></p>
+</main>
+<script src="/upload.js?v=2"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// Chunked, resumable upload (upload.js); files go up one at a time.
+let uploadsQueued = 0;
+function upload(file) {
+  uploadsQueued++;
+  $('up').hidden = false; $('uptxt').hidden = false;
+  window.piwiiUpload(file, {
+    onProgress: (frac, sent, total) => {
+      $('up').value = frac;
+      const route = window.piwiiUploadRoute ? window.piwiiUploadRoute() : '';
+      $('uptxt').textContent = `Uploading ${file.name}${route ? ` via ${route}` : ''}: ${(sent / 1e6).toFixed(0)} / ${(total / 1e6).toFixed(0)} MB (${Math.floor(frac * 100)}%)`
+        + (uploadsQueued > 1 ? ` · ${uploadsQueued - 1} more queued` : '');
+    },
+    onDone: () => refresh(),
+    onError: msg => alert(`Upload failed: ${msg}`),
+  }).then(() => {
+    if (--uploadsQueued === 0) { $('up').hidden = true; $('up').value = 0; $('uptxt').hidden = true; }
+  });
+}
+
+const drop = $('drop');
+drop.onclick = () => $('file').click();
+$('file').onchange = e => { for (const f of e.target.files) upload(f); };
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); for (const f of e.dataTransfer.files) upload(f); };
+
+$('urlform').onsubmit = async e => {
+  e.preventDefault();
+  const r = await fetch('/api/url', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ url: $('url').value }) });
+  if (!r.ok) alert(await r.text()); else $('url').value = '';
+  refresh();
+};
+
+function list(el, items, render, empty) {
+  el.innerHTML = items.length ? items.map(render).join('') : `<li class="muted">${empty}</li>`;
+}
+
+function ago(s) { return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : `${Math.floor(s / 3600)}h ago`; }
+
+function showPi(v) {
+  const dot = document.querySelector('#pi .dot'), p = v.pi || {}, sync = v.sync || {};
+  dot.className = 'dot ' + (!v.online ? 'off' : v.syncing ? 'busy' : 'on');
+  $('pihead').textContent = !v.online
+    ? (v.age_s == null ? 'Pi offline (no status yet)' : `Pi offline (last heard ${ago(v.age_s)})`)
+    : v.syncing ? `Pi syncing: ${sync.detail}` : 'Pi online';
+  if (!v.pi) { $('pidl').innerHTML = ''; return; }
+  const wii = p.wii_link === 'configured' ? `connected${p.wii_kib_per_s != null ? `, reading ${p.wii_kib_per_s} KiB/s` : ''}` : 'not connected';
+  const rows = [
+    ['Drive', p.t7 !== 'present' ? 'Drive missing!' : p.gadget === 'attached' ? 'plugged into the Wii' : 'unplugged from the Wii'],
+    ['Wii', wii],
+    ['Last sync', sync.phase === 'idle' ? `${sync.detail} (${ago(Math.max(0, Math.floor(Date.now() / 1000) - sync.updated))})` : (sync.detail || 'none yet')],
+    ['Staging free', `${(p.staging_free_bytes / 1e9).toFixed(0)} GB`],
+    ['Uptime', `${Math.floor(p.uptime_s / 86400)}d ${Math.floor(p.uptime_s % 86400 / 3600)}h`],
+  ];
+  $('pidl').innerHTML = rows.map(([k, val]) => `<dt>${k}</dt><dd>${esc(val)}</dd>`).join('');
+}
+
+async function refresh() {
+  fetch('/api/pi').then(r => r.json()).then(showPi).catch(() => {});
+  const [jobs, lib] = await Promise.all([fetch('/api/jobs').then(r => { if (r.status === 401) location.href = '/login'; return r.json(); }), fetch('/api/library').then(r => r.json())]);
+  list($('jobs'), jobs, j => `<li><span class="state ${j.state}">${esc(j.state)}</span> ${esc(j.title ? `${j.title} [${j.game_id}]` : j.source)}<div class="muted">${esc(j.detail)}</div></li>`, 'None yet.');
+  list($('pending'), lib.pending, p => `<li>${esc(p)}</li>`, 'Nothing waiting.');
+  if (lib.installed) list($('installed'), lib.installed.games || [], g => `<li>${esc(g.title || g.folder)} <span class="muted">${(g.bytes / 1e9).toFixed(1)} GB${g.title ? ` · ${esc(g.folder)}` : ''}</span></li>`, 'No games.');
+}
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

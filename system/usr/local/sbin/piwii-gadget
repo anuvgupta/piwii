@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# piwii-gadget: present the whole game drive to the USB host (the Wii) as a
+# USB mass storage device, via the configfs USB gadget framework.
+#
+#   piwii-gadget wait     wait up to 90 s for the game drive to appear (for boot)
+#   piwii-gadget attach   build the gadget if needed and bind it ("plug in")
+#   piwii-gadget detach   unbind it and release the game drive ("unplug")
+#   piwii-gadget status   show binding, backing disk, and host connection state
+#
+# The game drive must be owned by exactly one side: attached to the host here, or
+# mounted on the Pi. Never both, or FAT32 gets corrupted. attach refuses to
+# run while any of its partitions is mounted.
+set -euo pipefail
+
+# The game drive comes from /etc/default/piwii (see piwii.example in the repo).
+CONF=${PIWII_CONF:-/etc/default/piwii}
+if [ -r "$CONF" ]; then . "$CONF"; fi
+[ -n "${PIWII_DISK:-}" ] || { echo "piwii-gadget: set PIWII_DISK in $CONF" >&2; exit 1; }
+DISK=$PIWII_DISK
+G=/sys/kernel/config/usb_gadget/piwii
+LUN="$G/functions/mass_storage.usb0/lun.0"
+
+die() { echo "piwii-gadget: $*" >&2; exit 1; }
+
+[ "$(id -u)" -eq 0 ] || die "must run as root"
+
+udc_name() {
+    local u
+    u=$(ls /sys/class/udc 2>/dev/null | head -n1)
+    [ -n "$u" ] || die "no USB device controller in /sys/class/udc (is the dwc2 overlay enabled?)"
+    echo "$u"
+}
+
+is_bound() { [ -e "$G/UDC" ] && [ -n "$(cat "$G/UDC")" ]; }
+
+t7_mounted() {
+    local dev
+    dev=$(readlink -f "$DISK")
+    findmnt -rn -o SOURCE | grep -q "^${dev}"
+}
+
+build() {
+    [ -d "$G" ] && return 0
+    modprobe libcomposite
+    mkdir -p "$G"
+    echo 0x1d6b > "$G/idVendor"     # Linux Foundation
+    echo 0x0104 > "$G/idProduct"    # Multifunction Composite Gadget
+    echo 0x0100 > "$G/bcdDevice"
+    echo 0x0200 > "$G/bcdUSB"       # USB 2.0, all the Wii speaks
+
+    mkdir -p "$G/strings/0x409"
+    echo "piwii"           > "$G/strings/0x409/manufacturer"
+    echo "piwii drive"     > "$G/strings/0x409/product"
+    echo "${PIWII_GADGET_SERIAL:-piwii}" > "$G/strings/0x409/serialnumber"
+
+    mkdir -p "$G/configs/c.1/strings/0x409"
+    echo "mass storage" > "$G/configs/c.1/strings/0x409/configuration"
+    echo 0xC0 > "$G/configs/c.1/bmAttributes"   # self-powered: the Pi has its own supply
+    echo 2    > "$G/configs/c.1/MaxPower"       # mA drawn from the host's bus
+
+    mkdir -p "$G/functions/mass_storage.usb0"
+    echo 1 > "$G/functions/mass_storage.usb0/stall"
+    echo 0 > "$LUN/cdrom"
+    echo 0 > "$LUN/ro"
+    echo 0 > "$LUN/nofua"
+    echo 1 > "$LUN/removable"   # lets detach release the disk cleanly
+    ln -s "$G/functions/mass_storage.usb0" "$G/configs/c.1/"
+}
+
+wait_for_disk() {
+    local waited=0
+    until [ -b "$DISK" ] || [ "$waited" -ge 90 ]; do sleep 2; waited=$((waited + 2)); done
+    [ -b "$DISK" ] || die "game drive not found at $DISK after 90 s"
+    echo "game drive present: $(readlink -f "$DISK")"
+}
+
+attach() {
+    if is_bound; then echo "already attached"; return 0; fi
+    [ -b "$DISK" ] || die "game drive not found at $DISK"
+    t7_mounted && die "the game drive is mounted on the Pi; unmount it before attaching"
+    build
+    sync
+    echo "$DISK" > "$LUN/file"
+    udc_name > "$G/UDC"
+    echo "attached $(readlink -f "$DISK") to $(cat "$G/UDC")"
+}
+
+detach() {
+    if [ -d "$G" ]; then
+        if is_bound; then echo "" > "$G/UDC"; fi
+        echo "" > "$LUN/file"   # close the block device so the Pi can mount it
+    fi
+    echo "detached"
+}
+
+status() {
+    local udc
+    udc=$(udc_name)
+    if is_bound; then echo "gadget: attached to $(cat "$G/UDC")"; else echo "gadget: detached"; fi
+    if [ -d "$G" ]; then echo "backing: $(cat "$LUN/file" || true)"; fi
+    echo "host link: $(cat "/sys/class/udc/$udc/state")"
+    if t7_mounted; then echo "game drive: mounted on the Pi"; else echo "game drive: not mounted on the Pi"; fi
+}
+
+case "${1:-}" in
+    wait)   wait_for_disk ;;
+    attach) attach ;;
+    detach) detach ;;
+    status) status ;;
+    *) echo "usage: $0 wait|attach|detach|status" >&2; exit 2 ;;
+esac

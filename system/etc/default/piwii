@@ -1,0 +1,17 @@
+# piwii's settings for this Pi, read by piwii-gadget, piwii-sync and
+# piwii-status (installed as /etc/default/piwii, owned by root).
+# This setup's live file: the game drive is a 1 TB Samsung T7. For another
+# setup, start from piwii.example instead.
+
+# The game drive, by its stable name under /dev/disk/by-id (the whole disk,
+# not a -partN entry). List candidates with: ls -l /dev/disk/by-id/
+PIWII_DISK=/dev/disk/by-id/usb-Samsung_PSSD_T7_S6XBNS0W512374X-0:0
+
+# Serial number the Wii sees for the passed-through drive. Optional (default
+# "piwii"); this setup reuses the drive's own serial.
+PIWII_GADGET_SERIAL=S6XBNS0W512374X
+
+# Names shown on the web page's storage cards ("Drive • …", "Pi • …").
+# piwii-status publishes them; restart it after changing them.
+PIWII_DRIVE_LABEL="Samsung T7 SSD"
+PIWII_SD_LABEL="Amazon Basics microSD"

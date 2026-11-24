@@ -1,0 +1,20 @@
+[Unit]
+Description=piwii: present the game drive to the Wii as a USB drive
+After=sys-kernel-config.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Room for the drive wait (up to 90 s) plus the library refresh.
+TimeoutStartSec=5min
+# The game drive is set in /etc/default/piwii. Give it up to 90 s to appear at
+# boot, then fail (as the old device dependency did).
+ExecStartPre=/usr/local/sbin/piwii-gadget wait
+# Refresh staging/library.json before the Wii takes the drive; '-' means a
+# failure here never blocks the attach.
+ExecStartPre=-/usr/local/sbin/piwii-sync library
+ExecStart=/usr/local/sbin/piwii-gadget attach
+ExecStop=/usr/local/sbin/piwii-gadget detach
+
+[Install]
+WantedBy=multi-user.target

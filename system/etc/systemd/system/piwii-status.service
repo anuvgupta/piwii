@@ -1,0 +1,12 @@
+[Unit]
+Description=piwii: publish Pi status for the web page every 5 s
+Requires=srv-piwii-staging-status.mount
+After=srv-piwii-staging-status.mount
+
+[Service]
+ExecStart=/usr/local/sbin/piwii-status
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

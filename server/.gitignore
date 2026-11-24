@@ -1,0 +1,6 @@
+work/
+__pycache__/
+.env
+# Favicons are supplied per deployment (see the README); none is distributed.
+static/favicon.png
+static/favicon-32.png

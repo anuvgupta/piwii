@@ -1,0 +1,3 @@
+# Keeps the Pi's staging share mounted for the piwii container.
+# Unraid only. Installed as /boot/config/plugins/dynamix/piwii-staging-mount.cron
+* * * * * bash /mnt/user/workspace/piwii/server/host/piwii-staging-mount.sh
